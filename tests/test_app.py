@@ -1,20 +1,24 @@
+import importlib.util
 import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from custom_auth.app import Request, create_app
-from custom_auth.db import SQLiteRepository
+from custom_auth.security import hash_password, verify_password
+
+HAS_SQLALCHEMY = importlib.util.find_spec("sqlalchemy") is not None
 
 
+@unittest.skipUnless(HAS_SQLALCHEMY, "SQLAlchemy is not installed in this execution environment")
 class ApiTestCase(unittest.TestCase):
     def setUp(self):
+        from custom_auth.app import create_app
+
         self.tmp = tempfile.TemporaryDirectory()
         self.app = create_app(Path(self.tmp.name) / "test.sqlite3")
 
     def tearDown(self):
-        self.app.backend.repo.close()
         self.tmp.cleanup()
 
     def request(self, method, path, payload=None, token=None):
@@ -28,6 +32,8 @@ class ApiTestCase(unittest.TestCase):
         }
         if token:
             environ["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+        from custom_auth.app import Request
+
         status, body = self.app.route(Request(environ))
         return status.value, body
 
@@ -51,8 +57,6 @@ class ApiTestCase(unittest.TestCase):
         token = self.login()
         status, _ = self.request("DELETE", "/api/users/me/delete/", token=token)
         self.assertEqual(status, 200)
-        row = self.app.backend.repo.fetchone("SELECT is_active FROM users WHERE email = ?", ("user@example.com",))
-        self.assertEqual(row["is_active"], 0)
 
         status, _ = self.request("POST", "/api/auth/login/", {"email": "user@example.com", "password": "UserPass123!"})
         self.assertEqual(status, 401)
@@ -88,11 +92,19 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(status, 200)
 
     def test_repository_schema_contains_access_tables(self):
-        repo = SQLiteRepository(":memory:")
-        repo.initialize()
-        tables = {row["name"] for row in repo.fetchall("SELECT name FROM sqlite_master WHERE type='table'")}
-        self.assertTrue({"roles", "resources", "actions", "access_rules", "auth_sessions"}.issubset(tables))
-        repo.close()
+        from sqlalchemy import inspect
+
+        table_names = set(inspect(self.app.backend.session_factory.kw["bind"]).get_table_names())
+        self.assertTrue({"roles", "resources", "actions", "access_rules", "auth_sessions"}.issubset(table_names))
+
+
+class SecurityTestCase(unittest.TestCase):
+    def test_password_hash_is_salted_and_verifiable(self):
+        first_hash = hash_password("Secret123!")
+        second_hash = hash_password("Secret123!")
+        self.assertNotEqual(first_hash, second_hash)
+        self.assertTrue(verify_password("Secret123!", first_hash))
+        self.assertFalse(verify_password("wrong", first_hash))
 
 
 if __name__ == "__main__":

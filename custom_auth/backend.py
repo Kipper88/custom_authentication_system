@@ -1,109 +1,79 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from sqlite3 import Row
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeVar
 
-from custom_auth.db import SQLiteRepository
-from custom_auth import services
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
+from custom_auth.database import build_engine, build_session_factory, initialize_database, session_scope
+from custom_auth.repositories import SqlAlchemyAuthRepository
+from custom_auth.services import AuthService, AuthenticatedUser, LoginResult
 
-@dataclass(frozen=True)
-class AuthenticatedUser:
-    """Small immutable user object exposed to framework integrations."""
-
-    id: int
-    email: str
-    first_name: str
-    last_name: str
-    middle_name: str
-    is_active: bool
-    roles: tuple[str, ...]
-
-    @classmethod
-    def from_row(cls, repo: SQLiteRepository, row: Row) -> "AuthenticatedUser":
-        payload = services.user_to_dict(repo, row)
-        return cls(
-            id=payload["id"],
-            email=payload["email"],
-            first_name=payload["first_name"],
-            last_name=payload["last_name"],
-            middle_name=payload["middle_name"],
-            is_active=payload["is_active"],
-            roles=tuple(payload["roles"]),
-        )
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "email": self.email,
-            "first_name": self.first_name,
-            "last_name": self.last_name,
-            "middle_name": self.middle_name,
-            "is_active": self.is_active,
-            "roles": list(self.roles),
-        }
-
-
-@dataclass(frozen=True)
-class LoginResult:
-    token: str
-    user: AuthenticatedUser
+T = TypeVar("T")
 
 
 class CustomAuthBackend:
-    """Application-facing API for custom auth.
+    """Application-facing facade for custom auth.
 
-    The backend keeps framework code thin: HTTP adapters only extract bearer
-    tokens, then delegate registration, login, session lookup and permission
-    checks here. That makes it straightforward to plug into FastAPI middleware
-    or another web framework without rewriting auth rules.
+    The facade owns SQLAlchemy session boundaries. Web adapters call this class,
+    while `AuthService` contains business rules and `SqlAlchemyAuthRepository`
+    contains database access.
     """
 
-    def __init__(self, repo: SQLiteRepository):
-        self.repo = repo
+    def __init__(self, session_factory: sessionmaker[Session]):
+        self.session_factory = session_factory
+
+    @classmethod
+    def from_engine(cls, engine: Engine, seed: bool = True) -> "CustomAuthBackend":
+        initialize_database(engine, seed=seed)
+        return cls(build_session_factory(engine))
+
+    @classmethod
+    def from_url(cls, database_url: str = "sqlite:///custom_auth.sqlite3", seed: bool = True) -> "CustomAuthBackend":
+        return cls.from_engine(build_engine(database_url), seed=seed)
 
     @classmethod
     def with_sqlite(cls, database: str = "custom_auth.sqlite3", seed: bool = True) -> "CustomAuthBackend":
-        repo = SQLiteRepository(database)
-        repo.initialize(seed=seed)
-        return cls(repo)
+        return cls.from_url(f"sqlite:///{database}", seed=seed)
 
     def register(self, payload: dict[str, Any]) -> AuthenticatedUser:
-        user = services.register(self.repo, payload)
-        row = self.repo.fetchone("SELECT * FROM users WHERE id = ?", (user["id"],))
-        return AuthenticatedUser.from_row(self.repo, row)
+        return self._write(lambda service: service.register(payload))
 
     def login(self, email: str, password: str) -> LoginResult:
-        token, user = services.authenticate(self.repo, email, password)
-        row = self.repo.fetchone("SELECT * FROM users WHERE id = ?", (user["id"],))
-        return LoginResult(token=token, user=AuthenticatedUser.from_row(self.repo, row))
+        return self._write(lambda service: service.login(email, password))
 
     def identify_token(self, token: str | None) -> AuthenticatedUser | None:
-        row = services.current_user(self.repo, token)
-        if row is None:
-            return None
-        return AuthenticatedUser.from_row(self.repo, row)
+        return self._write(lambda service: service.identify_token(token))
 
     def logout(self, token: str | None) -> None:
-        services.revoke(self.repo, token)
+        self._write(lambda service: service.logout(token))
 
     def update_profile(self, user_id: int, payload: dict[str, Any]) -> AuthenticatedUser:
-        user = services.update_profile(self.repo, user_id, payload)
-        row = self.repo.fetchone("SELECT * FROM users WHERE id = ?", (user["id"],))
-        return AuthenticatedUser.from_row(self.repo, row)
+        return self._write(lambda service: service.update_profile(user_id, payload))
 
     def soft_delete_user(self, user_id: int) -> None:
-        services.soft_delete(self.repo, user_id)
+        self._write(lambda service: service.soft_delete_user(user_id))
 
     def has_permission(self, user_id: int, resource: str, action: str = "read") -> bool:
-        return services.has_permission(self.repo, user_id, resource, action)
+        return self._read(lambda service: service.has_permission(user_id, resource, action))
 
     def is_admin(self, user_id: int) -> bool:
-        return services.is_admin(self.repo, user_id)
+        return self._read(lambda service: service.is_admin(user_id))
 
     def list_rules(self) -> list[dict[str, Any]]:
-        return services.list_rules(self.repo)
+        return self._read(lambda service: service.list_rules())
 
     def save_rule(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        return services.upsert_rule(self.repo, payload)
+        return self._write(lambda service: service.save_rule(payload))
+
+    def _read(self, callback: Callable[[AuthService], T]) -> T:
+        with self.session_factory() as session:
+            return callback(self._service(session))
+
+    def _write(self, callback: Callable[[AuthService], T]) -> T:
+        with session_scope(self.session_factory) as session:
+            return callback(self._service(session))
+
+    def _service(self, session: Session) -> AuthService:
+        return AuthService(SqlAlchemyAuthRepository(session))

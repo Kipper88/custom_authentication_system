@@ -23,7 +23,7 @@ class Application:
 
     The project intentionally keeps HTTP concerns here and business/auth rules
     in `CustomAuthBackend`, so the same backend can be used from FastAPI via
-    `custom_auth.fastapi.CustomAuthMiddleware`.
+    `custom_auth.integrations.fastapi.CustomAuthMiddleware`.
     """
 
     def __init__(self, backend: CustomAuthBackend):
@@ -68,7 +68,7 @@ class Application:
     def register(self, request: "Request") -> tuple[HTTPStatus, dict[str, Any]]:
         try:
             user = self.backend.register(request.json)
-        except ValueError as exc:
+        except services.ValidationError as exc:
             return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
         except services.ConflictError as exc:
             return HTTPStatus.CONFLICT, {"error": str(exc)}
@@ -108,7 +108,10 @@ class Application:
             return forbidden()
         if request.method == "GET":
             return HTTPStatus.OK, {"rules": self.backend.list_rules()}
-        return HTTPStatus.CREATED, {"rules": self.backend.save_rule(request.json)}
+        try:
+            return HTTPStatus.CREATED, {"rules": self.backend.save_rule(request.json)}
+        except services.AccessRuleError as exc:
+            return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
 
     def mock_resource(
         self,
