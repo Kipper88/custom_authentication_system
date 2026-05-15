@@ -1,0 +1,3 @@
+# The application uses only the Python standard library at runtime.
+# PostgreSQL can be used through the same repository boundary by replacing
+# custom_auth.db.SQLiteRepository with a psycopg-backed implementation.
