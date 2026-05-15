@@ -1,34 +1,33 @@
+from __future__ import annotations
+
 import json
 from http import HTTPStatus
+from typing import Any
 from urllib.parse import parse_qs
 
-from custom_auth.db import SQLiteRepository
-from custom_auth.services import (
-    AuthenticationError,
-    ConflictError,
-    authenticate,
-    current_user,
-    has_permission,
-    is_admin,
-    list_rules,
-    register,
-    revoke,
-    soft_delete,
-    update_profile,
-    upsert_rule,
-    user_to_dict,
-)
+from custom_auth import services
+from custom_auth.backend import CustomAuthBackend
+
+AUTH_HEADER_PREFIX = "Bearer "
 
 
-def bearer_token(environ):
+def bearer_token(environ: dict[str, Any]) -> str | None:
     header = environ.get("HTTP_AUTHORIZATION", "")
-    prefix = "Bearer "
-    return header[len(prefix):].strip() if header.startswith(prefix) else None
+    if header.startswith(AUTH_HEADER_PREFIX):
+        return header[len(AUTH_HEADER_PREFIX) :].strip()
+    return None
 
 
 class Application:
-    def __init__(self, repo: SQLiteRepository):
-        self.repo = repo
+    """Small WSGI adapter around the framework-agnostic auth backend.
+
+    The project intentionally keeps HTTP concerns here and business/auth rules
+    in `CustomAuthBackend`, so the same backend can be used from FastAPI via
+    `custom_auth.fastapi.CustomAuthMiddleware`.
+    """
+
+    def __init__(self, backend: CustomAuthBackend):
+        self.backend = backend
 
     def __call__(self, environ, start_response):
         request = Request(environ)
@@ -40,79 +39,94 @@ class Application:
         )
         return [payload]
 
-    def route(self, request):
-        if request.path == "/api/auth/register/" and request.method == "POST":
-            return self.register(request)
-        if request.path == "/api/auth/login/" and request.method == "POST":
-            return self.login(request)
-        if request.path == "/api/auth/logout/" and request.method == "POST":
-            revoke(self.repo, request.token)
-            return HTTPStatus.OK, {"status": "logged_out"}
-        if request.path == "/api/users/me/" and request.method in {"GET", "PATCH"}:
-            return self.profile(request)
-        if request.path == "/api/users/me/delete/" and request.method == "DELETE":
-            return self.delete_account(request)
-        if request.path == "/api/access/rules/" and request.method in {"GET", "POST"}:
-            return self.access_rules(request)
-        if request.path == "/api/business/documents/" and request.method == "GET":
-            return self.mock_resource(request, "documents", "documents", [{"id": 1, "title": "Public contract draft"}])
-        if request.path == "/api/business/reports/" and request.method == "GET":
-            return self.mock_resource(request, "reports", "reports", [{"id": 1, "title": "Quarterly revenue report"}])
-        if request.path == "/api/business/admin-dashboard/" and request.method == "GET":
-            return self.mock_resource(request, "admin-dashboard", "metrics", {"active_users": 2})
-        return HTTPStatus.NOT_FOUND, {"error": "Not found"}
+    def route(self, request: "Request") -> tuple[HTTPStatus, dict[str, Any]]:
+        route_key = (request.method, request.path)
+        routes = {
+            ("POST", "/api/auth/register/"): self.register,
+            ("POST", "/api/auth/login/"): self.login,
+            ("POST", "/api/auth/logout/"): self.logout,
+            ("GET", "/api/users/me/"): self.profile,
+            ("PATCH", "/api/users/me/"): self.profile,
+            ("DELETE", "/api/users/me/delete/"): self.delete_account,
+            ("GET", "/api/access/rules/"): self.access_rules,
+            ("POST", "/api/access/rules/"): self.access_rules,
+            ("GET", "/api/business/documents/"): lambda req: self.mock_resource(
+                req, "documents", "documents", [{"id": 1, "title": "Public contract draft"}]
+            ),
+            ("GET", "/api/business/reports/"): lambda req: self.mock_resource(
+                req, "reports", "reports", [{"id": 1, "title": "Quarterly revenue report"}]
+            ),
+            ("GET", "/api/business/admin-dashboard/"): lambda req: self.mock_resource(
+                req, "admin-dashboard", "metrics", {"active_users": 2}
+            ),
+        }
+        handler = routes.get(route_key)
+        if handler is None:
+            return HTTPStatus.NOT_FOUND, {"error": "Not found"}
+        return handler(request)
 
-    def register(self, request):
+    def register(self, request: "Request") -> tuple[HTTPStatus, dict[str, Any]]:
         try:
-            return HTTPStatus.CREATED, {"user": register(self.repo, request.json)}
+            user = self.backend.register(request.json)
         except ValueError as exc:
             return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
-        except ConflictError as exc:
+        except services.ConflictError as exc:
             return HTTPStatus.CONFLICT, {"error": str(exc)}
+        return HTTPStatus.CREATED, {"user": user.as_dict()}
 
-    def login(self, request):
+    def login(self, request: "Request") -> tuple[HTTPStatus, dict[str, Any]]:
         try:
-            token, user = authenticate(self.repo, request.json.get("email", ""), request.json.get("password", ""))
-        except AuthenticationError:
+            result = self.backend.login(request.json.get("email", ""), request.json.get("password", ""))
+        except services.AuthenticationError:
             return HTTPStatus.UNAUTHORIZED, {"error": "Invalid email or password"}
-        return HTTPStatus.OK, {"token": token, "user": user}
+        return HTTPStatus.OK, {"token": result.token, "user": result.user.as_dict()}
 
-    def profile(self, request):
-        user = current_user(self.repo, request.token)
+    def logout(self, request: "Request") -> tuple[HTTPStatus, dict[str, str]]:
+        self.backend.logout(request.token)
+        return HTTPStatus.OK, {"status": "logged_out"}
+
+    def profile(self, request: "Request") -> tuple[HTTPStatus, dict[str, Any]]:
+        user = self.backend.identify_token(request.token)
         if user is None:
-            return HTTPStatus.UNAUTHORIZED, {"error": "Authentication credentials were not provided or are invalid"}
+            return unauthorized()
         if request.method == "PATCH":
-            return HTTPStatus.OK, {"user": update_profile(self.repo, user["id"], request.json)}
-        return HTTPStatus.OK, {"user": user_to_dict(self.repo, user)}
+            user = self.backend.update_profile(user.id, request.json)
+        return HTTPStatus.OK, {"user": user.as_dict()}
 
-    def delete_account(self, request):
-        user = current_user(self.repo, request.token)
+    def delete_account(self, request: "Request") -> tuple[HTTPStatus, dict[str, str]]:
+        user = self.backend.identify_token(request.token)
         if user is None:
-            return HTTPStatus.UNAUTHORIZED, {"error": "Authentication credentials were not provided or are invalid"}
-        soft_delete(self.repo, user["id"])
+            return unauthorized()
+        self.backend.soft_delete_user(user.id)
         return HTTPStatus.OK, {"status": "deleted"}
 
-    def access_rules(self, request):
-        user = current_user(self.repo, request.token)
+    def access_rules(self, request: "Request") -> tuple[HTTPStatus, dict[str, Any]]:
+        user = self.backend.identify_token(request.token)
         if user is None:
-            return HTTPStatus.UNAUTHORIZED, {"error": "Authentication credentials were not provided or are invalid"}
-        if not is_admin(self.repo, user["id"]):
-            return HTTPStatus.FORBIDDEN, {"error": "Forbidden"}
+            return unauthorized()
+        if not self.backend.is_admin(user.id):
+            return forbidden()
         if request.method == "GET":
-            return HTTPStatus.OK, {"rules": list_rules(self.repo)}
-        return HTTPStatus.CREATED, {"rules": upsert_rule(self.repo, request.json)}
+            return HTTPStatus.OK, {"rules": self.backend.list_rules()}
+        return HTTPStatus.CREATED, {"rules": self.backend.save_rule(request.json)}
 
-    def mock_resource(self, request, resource, key, value):
-        user = current_user(self.repo, request.token)
+    def mock_resource(
+        self,
+        request: "Request",
+        resource: str,
+        response_key: str,
+        response_value: Any,
+    ) -> tuple[HTTPStatus, dict[str, Any]]:
+        user = self.backend.identify_token(request.token)
         if user is None:
-            return HTTPStatus.UNAUTHORIZED, {"error": "Authentication credentials were not provided or are invalid"}
-        if not has_permission(self.repo, user["id"], resource, "read"):
-            return HTTPStatus.FORBIDDEN, {"error": "Forbidden"}
-        return HTTPStatus.OK, {key: value}
+            return unauthorized()
+        if not self.backend.has_permission(user.id, resource, "read"):
+            return forbidden()
+        return HTTPStatus.OK, {response_key: response_value}
 
 
 class Request:
-    def __init__(self, environ):
+    def __init__(self, environ: dict[str, Any]):
         self.method = environ["REQUEST_METHOD"]
         self.path = environ.get("PATH_INFO", "/")
         self.query = parse_qs(environ.get("QUERY_STRING", ""))
@@ -122,10 +136,16 @@ class Request:
         self.json = json.loads(raw.decode() or "{}")
 
 
+def unauthorized() -> tuple[HTTPStatus, dict[str, str]]:
+    return HTTPStatus.UNAUTHORIZED, {"error": "Authentication credentials were not provided or are invalid"}
+
+
+def forbidden() -> tuple[HTTPStatus, dict[str, str]]:
+    return HTTPStatus.FORBIDDEN, {"error": "Forbidden"}
+
+
 def create_app(database="custom_auth.sqlite3", seed=True):
-    repo = SQLiteRepository(database)
-    repo.initialize(seed=seed)
-    return Application(repo)
+    return Application(CustomAuthBackend.with_sqlite(database, seed=seed))
 
 
 if __name__ == "__main__":

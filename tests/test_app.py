@@ -14,7 +14,7 @@ class ApiTestCase(unittest.TestCase):
         self.app = create_app(Path(self.tmp.name) / "test.sqlite3")
 
     def tearDown(self):
-        self.app.repo.close()
+        self.app.backend.repo.close()
         self.tmp.cleanup()
 
     def request(self, method, path, payload=None, token=None):
@@ -51,7 +51,7 @@ class ApiTestCase(unittest.TestCase):
         token = self.login()
         status, _ = self.request("DELETE", "/api/users/me/delete/", token=token)
         self.assertEqual(status, 200)
-        row = self.app.repo.fetchone("SELECT is_active FROM users WHERE email = ?", ("user@example.com",))
+        row = self.app.backend.repo.fetchone("SELECT is_active FROM users WHERE email = ?", ("user@example.com",))
         self.assertEqual(row["is_active"], 0)
 
         status, _ = self.request("POST", "/api/auth/login/", {"email": "user@example.com", "password": "UserPass123!"})

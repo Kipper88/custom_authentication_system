@@ -1,15 +1,52 @@
 # Custom Authentication System
 
-Backend-приложение реализует собственную систему аутентификации и авторизации без готовых framework-механизмов пользователей, сессий и permission-классов. Runtime построен на стандартной библиотеке Python: WSGI-приложение, SQLite-хранилище и собственная проверка bearer-токенов. Для production можно заменить `SQLiteRepository` на PostgreSQL-реализацию с теми же таблицами и сервисным интерфейсом.
+Backend-приложение реализует собственную систему аутентификации и авторизации без готовых framework-механизмов пользователей, сессий и permission-классов. Ядро вынесено в framework-agnostic backend (`CustomAuthBackend`), поэтому его можно запускать как небольшой WSGI-сервер для демонстрации или подключать к FastAPI почти как встроенную библиотеку через middleware и dependencies.
 
-## Запуск
+## Запуск демо без внешних зависимостей
 
 ```bash
-python -m unittest
+python -m unittest discover -v
 python -m custom_auth.app
 ```
 
 Сервер стартует на `http://127.0.0.1:8000` и автоматически создаст локальную БД `custom_auth.sqlite3` с тестовыми данными.
+
+## Подключение к FastAPI
+
+```python
+from typing import Annotated
+
+from fastapi import Depends, FastAPI
+
+from custom_auth.backend import AuthenticatedUser, CustomAuthBackend
+from custom_auth.fastapi import (
+    CustomAuthMiddleware,
+    CurrentUser,
+    admin_dependency,
+    permission_dependency,
+)
+
+backend = CustomAuthBackend.with_sqlite("custom_auth.sqlite3")
+app = FastAPI()
+app.add_middleware(CustomAuthMiddleware, backend=backend)
+
+
+@app.get("/me")
+def me(user: CurrentUser):
+    return user.as_dict()
+
+
+@app.get("/documents")
+def documents(user: Annotated[AuthenticatedUser, Depends(permission_dependency("documents", "read"))]):
+    return {"documents": [{"id": 1, "title": "Public contract draft"}]}
+
+
+@app.get("/access-rules")
+def access_rules(user: Annotated[AuthenticatedUser, Depends(admin_dependency)]):
+    return {"rules": backend.list_rules()}
+```
+
+Middleware читает `Authorization: Bearer <token>`, кладет найденного пользователя в `request.state.user`, а dependency helpers возвращают `401`, если пользователь не определен, и `403`, если прав недостаточно.
 
 ## Демо-пользователи
 
@@ -43,7 +80,7 @@ python -m custom_auth.app
 4. Если пользователь найден, но ни одна из его ролей не имеет разрешающего правила `access_rules`, endpoint возвращает `403`.
 5. Если правило найдено, mock-view возвращает запрошенный ресурс.
 
-## API
+## API демо-приложения
 
 ### Пользовательские операции
 

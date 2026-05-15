@@ -1,3 +1,5 @@
-# The application uses only the Python standard library at runtime.
-# PostgreSQL can be used through the same repository boundary by replacing
-# custom_auth.db.SQLiteRepository with a psycopg-backed implementation.
+# Core runtime uses the Python standard library.
+# FastAPI is included for the optional first-class integration module:
+# custom_auth.fastapi.CustomAuthMiddleware.
+fastapi>=0.115,<1.0
+uvicorn>=0.34,<1.0
