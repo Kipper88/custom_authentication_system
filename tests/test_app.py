@@ -109,3 +109,16 @@ class SecurityTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class WebAppAssetsTestCase(unittest.TestCase):
+    def test_web_app_contains_auth_and_deactivation_ui(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "apps" / "web_app" / "static" / "index.html").read_text(encoding="utf-8")
+        script = (root / "apps" / "web_app" / "static" / "app.js").read_text(encoding="utf-8")
+        styles = (root / "apps" / "web_app" / "static" / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="login-form"', html)
+        self.assertIn('id="register-form"', html)
+        self.assertIn('id="deactivate-button"', html)
+        self.assertIn('/api/account', script)
+        self.assertIn('color-scheme: dark', styles)

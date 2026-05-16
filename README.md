@@ -17,6 +17,7 @@ custom_auth/
 apps/
   fastapi_app/main.py    # тестовое FastAPI-приложение
   drf_app/               # тестовое DRF-приложение
+  web_app/               # полноценная тёмная web-обвязка с формами auth/account deactivate
 ```
 
 Такое разделение позволяет использовать один и тот же сервис авторизации в разных web-фреймворках. Например, SQLite можно заменить на PostgreSQL через database URL, не переписывая правила доступа.
@@ -42,6 +43,14 @@ uvicorn apps.fastapi_app.main:app --reload
 export DJANGO_SETTINGS_MODULE=apps.drf_app.settings
 python -m django runserver
 ```
+
+### Web app demo
+
+```bash
+uvicorn apps.web_app.main:app --reload
+```
+
+Откройте `http://127.0.0.1:8000/`: приложение показывает современный тёмный интерфейс с формами входа, регистрации, отображением активной сессии, logout и мягким отключением учётки.
 
 ## Демо-пользователи
 
@@ -124,6 +133,19 @@ class DocumentsView(APIView):
     def get(self, request):
         return Response({"documents": [{"id": 1, "title": "Public contract draft"}]})
 ```
+
+## Web app
+
+`apps/web_app` — отдельное приложение, которое использует тот же `CustomAuthBackend` в условиях, близких к реальному frontend/backend сценарию:
+
+- `GET /` отдаёт HTML-интерфейс.
+- `POST /api/register` регистрирует пользователя через сервис авторизации.
+- `POST /api/login` возвращает bearer-токен.
+- `GET /api/me` восстанавливает сессию по токену из `localStorage`.
+- `POST /api/logout` отзывает текущий токен.
+- `DELETE /api/account` выполняет soft-delete: `is_active=False`, активные сессии отзываются.
+
+Frontend написан без дополнительных сборщиков: `static/index.html`, `static/styles.css`, `static/app.js`. Дизайн выполнен в тёмных тонах с glassmorphism-карточками, адаптивной сеткой и состояниями success/error.
 
 ## API demo-приложений
 
