@@ -144,8 +144,10 @@ class DocumentsView(APIView):
 - `GET /api/me` восстанавливает сессию по токену из `localStorage`.
 - `POST /api/logout` отзывает текущий токен.
 - `DELETE /api/account` выполняет soft-delete: `is_active=False`, активные сессии отзываются.
+- `GET /api/mock/resources` отдаёт список демонстрационных mock-view.
+- `GET /api/mock/{resource_code}` проверяет bearer-сессию и access rules, возвращая `401`, `403` или mock-данные ресурса.
 
-Frontend написан без дополнительных сборщиков: `static/index.html`, `static/styles.css`, `static/app.js`. Дизайн выполнен в тёмных тонах с glassmorphism-карточками, адаптивной сеткой и состояниями success/error.
+Frontend написан без дополнительных сборщиков: `static/index.html`, `static/styles.css`, `static/app.js`. Дизайн выполнен в тёмных тонах с glassmorphism-карточками, адаптивной сеткой, состояниями success/error и панелью проверки mock-view для демонстрации 401/403/200.
 
 ## API demo-приложений
 

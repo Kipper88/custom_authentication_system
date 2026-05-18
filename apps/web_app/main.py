@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from custom_auth.backend import CustomAuthBackend
 from custom_auth.integrations.fastapi import CustomAuthMiddleware, extract_bearer_token
+from custom_auth.mock_views import get_mock_resource, list_mock_resources
 from custom_auth.services import AuthenticationError, ConflictError, ValidationError
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -66,3 +67,28 @@ def deactivate_account(request: Request) -> Response:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     backend.soft_delete_user(user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.get("/api/mock/resources")
+def mock_resources() -> dict[str, Any]:
+    return {"resources": list_mock_resources()}
+
+
+@app.get("/api/mock/{resource_code}")
+def mock_view(resource_code: str, request: Request) -> dict[str, Any]:
+    resource = get_mock_resource(resource_code)
+    if resource is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown mock resource")
+
+    user = request.state.user
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    if not backend.has_permission(user.id, resource.code, resource.action):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    return {
+        "resource": resource.code,
+        "action": resource.action,
+        "user": user.as_dict(),
+        resource.payload_key: resource.payload,
+    }

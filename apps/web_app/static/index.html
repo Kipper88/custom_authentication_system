@@ -86,6 +86,27 @@
           </div>
         </div>
 
+
+        <div class="mock-panel">
+          <div class="mock-header">
+            <div>
+              <p class="eyebrow">Mock-view</p>
+              <h2>Проверка доступа к ресурсам</h2>
+            </div>
+            <span class="mock-chip">401 / 403 / 200</span>
+          </div>
+          <p class="muted">
+            Эти кнопки вызывают защищённые mock-view и показывают, как система
+            реагирует без токена, с обычной ролью user и с admin-доступом.
+          </p>
+          <div id="mock-actions" class="mock-actions">
+            <button class="secondary" type="button" data-resource="documents">Документы</button>
+            <button class="secondary" type="button" data-resource="reports">Отчёты</button>
+            <button class="secondary" type="button" data-resource="admin-dashboard">Admin dashboard</button>
+          </div>
+          <pre id="mock-output" class="mock-output">Нажмите ресурс, чтобы увидеть ответ mock-view.</pre>
+        </div>
+
         <output id="message" class="message" aria-live="polite"></output>
       </section>
     </main>

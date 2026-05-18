@@ -121,4 +121,6 @@ class WebAppAssetsTestCase(unittest.TestCase):
         self.assertIn('id="register-form"', html)
         self.assertIn('id="deactivate-button"', html)
         self.assertIn('/api/account', script)
+        self.assertIn('/api/mock/${resource}', script)
+        self.assertIn('id="mock-actions"', html)
         self.assertIn('color-scheme: dark', styles)

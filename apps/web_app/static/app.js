@@ -9,6 +9,8 @@ const userEmail = document.querySelector("#user-email");
 const roles = document.querySelector("#roles");
 const logoutButton = document.querySelector("#logout-button");
 const deactivateButton = document.querySelector("#deactivate-button");
+const mockActions = document.querySelector("#mock-actions");
+const mockOutput = document.querySelector("#mock-output");
 
 function setMessage(text, type = "") {
   message.textContent = text;
@@ -158,3 +160,30 @@ deactivateButton.addEventListener("click", async () => {
 });
 
 restoreSession();
+
+
+mockActions.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-resource]");
+  if (!button) {
+    return;
+  }
+
+  const resource = button.dataset.resource;
+  mockOutput.textContent = `GET /api/mock/${resource}\nВыполняем запрос…`;
+  try {
+    const data = await request(`/api/mock/${resource}`);
+    mockOutput.textContent = JSON.stringify(data, null, 2);
+    setMessage(`Mock-view вернул 200 для ${resource}`, "success");
+  } catch (error) {
+    mockOutput.textContent = JSON.stringify(
+      {
+        resource,
+        result: error.message,
+        hint: "Войдите в систему или проверьте access_rules для роли пользователя.",
+      },
+      null,
+      2,
+    );
+    setMessage(`Mock-view отказал в доступе: ${error.message}`, "error");
+  }
+});
