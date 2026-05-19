@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Custom Auth Portal</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="badge">Custom Auth System</div>
+        <h1 id="hero-title">Безопасный доступ к сервису</h1>
+        <p>
+          Реальная веб-обвязка поверх собственной системы регистрации,
+          авторизации, bearer-сессий и мягкого отключения учётки.
+        </p>
+        <div class="hero-grid">
+          <div><span>PBKDF2</span><small>хэш пароля</small></div>
+          <div><span>Bearer</span><small>токены</small></div>
+          <div><span>RBAC</span><small>правила доступа</small></div>
+        </div>
+      </section>
+
+      <section class="card auth-card" aria-label="Формы доступа">
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="login" type="button">Вход</button>
+          <button class="tab" data-tab="register" type="button">Регистрация</button>
+        </div>
+
+        <form id="login-form" class="form active" autocomplete="on">
+          <label>
+            Email
+            <input name="email" type="email" value="user@example.com" placeholder="you@example.com" required />
+          </label>
+          <label>
+            Пароль
+            <input name="password" type="password" value="UserPass123!" placeholder="••••••••" required />
+          </label>
+          <button class="primary" type="submit">Войти</button>
+          <p class="hint">Демо: user@example.com / UserPass123!</p>
+        </form>
+
+        <form id="register-form" class="form" autocomplete="on">
+          <div class="row">
+            <label>
+              Имя
+              <input name="first_name" placeholder="Иван" required />
+            </label>
+            <label>
+              Фамилия
+              <input name="last_name" placeholder="Петров" required />
+            </label>
+          </div>
+          <label>
+            Отчество
+            <input name="middle_name" placeholder="Сергеевич" />
+          </label>
+          <label>
+            Email
+            <input name="email" type="email" placeholder="ivan@example.com" required />
+          </label>
+          <div class="row">
+            <label>
+              Пароль
+              <input name="password" type="password" placeholder="Минимум 8 символов" required />
+            </label>
+            <label>
+              Повтор пароля
+              <input name="password_repeat" type="password" placeholder="Повторите пароль" required />
+            </label>
+          </div>
+          <button class="primary" type="submit">Создать аккаунт</button>
+        </form>
+
+        <div id="session-panel" class="session-panel hidden">
+          <div>
+            <p class="eyebrow">Активная сессия</p>
+            <h2 id="user-name">—</h2>
+            <p id="user-email" class="muted">—</p>
+          </div>
+          <div class="roles" id="roles"></div>
+          <div class="actions">
+            <button id="logout-button" class="secondary" type="button">Выйти</button>
+            <button id="deactivate-button" class="danger" type="button">Отключить учётку</button>
+          </div>
+        </div>
+
+
+        <output id="message" class="message" aria-live="polite"></output>
+
+        <div class="mock-panel">
+          <div class="mock-header">
+            <div>
+              <p class="eyebrow">Mock-view</p>
+              <h2>Проверка доступа к ресурсам</h2>
+            </div>
+            <span class="mock-chip">401 / 403 / 200</span>
+          </div>
+          <p class="muted">
+            Эти кнопки вызывают защищённые mock-view и показывают, как система
+            реагирует без токена, с обычной ролью user и с admin-доступом.
+          </p>
+          <div id="mock-actions" class="mock-actions">
+            <button class="secondary" type="button" data-resource="documents">Документы</button>
+            <button class="secondary" type="button" data-resource="reports">Отчёты</button>
+            <button class="secondary" type="button" data-resource="admin-dashboard">Admin dashboard</button>
+          </div>
+          <pre id="mock-output" class="mock-output">Нажмите ресурс, чтобы увидеть ответ mock-view.</pre>
+        </div>
+
+      </section>
+    </main>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
