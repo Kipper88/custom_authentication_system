@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Custom Auth Portal</title>
     <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/app.js" defer></script>
   </head>
   <body>
     <main class="shell">
@@ -86,6 +87,7 @@
           </div>
         </div>
 
+        <output id="message" class="message" aria-live="polite"></output>
 
         <div class="mock-panel">
           <div class="mock-header">
@@ -96,8 +98,7 @@
             <span class="mock-chip">401 / 403 / 200</span>
           </div>
           <p class="muted">
-            Эти кнопки вызывают защищённые mock-view и показывают, как система
-            реагирует без токена, с обычной ролью user и с admin-доступом.
+            Эти кнопки вызывают защищённые mock-view и показывают, как система реагирует.
           </p>
           <div id="mock-actions" class="mock-actions">
             <button class="secondary" type="button" data-resource="documents">Документы</button>
@@ -106,10 +107,7 @@
           </div>
           <pre id="mock-output" class="mock-output">Нажмите ресурс, чтобы увидеть ответ mock-view.</pre>
         </div>
-
-        <output id="message" class="message" aria-live="polite"></output>
       </section>
     </main>
-    <script src="/static/app.js" defer></script>
   </body>
 </html>
